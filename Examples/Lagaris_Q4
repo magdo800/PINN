@@ -1,0 +1,458 @@
+# -*- coding: utf-8 -*-
+"""Lagaris Problem 4, Chapter 3 in the dissertation.
+
+Solves the coupled ODE system:
+    dpsi1/dx = cos(x) + psi1^2 + psi2 - (1 + x^2 + sin^2(x))
+    dpsi2/dx = 2x - (1 + x^2)*sin(x) + psi1*psi2
+
+with analytic solutions psi1 = sin(x), psi2 = 1 + x^2,
+and boundary conditions psi1(0) = 0, psi2(0) = 1.
+
+The trial solutions automatically satisfy the BCs:
+    psi1_trial = x * N1(x)
+    psi2_trial = 1 + x * N2(x)
+where N1, N2 are the two outputs of the neural network.
+"""
+
+import torch
+import torch.utils.data
+import numpy as np
+import matplotlib.pyplot as plt
+import time
+import random
+
+
+class DataSet(torch.utils.data.Dataset):
+    def __init__(self, num_samples, x_range):
+        self.data_in = torch.linspace(x_range[0], x_range[1], num_samples)
+        self.x_range = x_range
+        self.num_samples = num_samples
+
+    def __len__(self):
+        return len(self.data_in)
+
+    def __getitem__(self, i):
+        return self.data_in[i]
+
+
+class Fitter(torch.nn.Module):
+    """Single hidden-layer network with tanh activations.
+    Input: scalar x. Output: (N1, N2) used to form the two trial solutions.
+    """
+    def __init__(self, num_hidden_nodes):
+        super(Fitter, self).__init__()
+        self.fc1 = torch.nn.Linear(1, num_hidden_nodes)
+        self.fc2 = torch.nn.Linear(num_hidden_nodes, 2)
+        torch.nn.init.xavier_uniform_(self.fc1.weight)
+        torch.nn.init.xavier_uniform_(self.fc2.weight)
+
+    def forward(self, x):
+        h = torch.tanh(self.fc1(x))
+        y = self.fc2(h)
+        return y
+
+
+class PinnSolver():
+    def __init__(self, network, train_set, epochs, train_loader, loss_fn, optimiser,
+                 x_range=(0, 3), num_points=30, seed=0):
+        self.network     = network
+        self.train_set   = train_set
+        self.train_loader = train_loader
+        self.loss_fn     = loss_fn
+        self.optimiser   = optimiser
+        self.x_range     = x_range
+        self.seed        = seed
+        self.epoch       = 0
+        self.loss        = 0.
+        self.epochs      = epochs
+
+        # Number of random collocation points when random_collocation_pts=True
+        self.num_samples = train_set.num_samples
+
+        # Points used for solution plots
+        self.x_test = torch.linspace(*x_range, num_points)
+
+        # Higher-resolution grid for residual/test-loss evaluation
+        self.xrespts    = 200
+        self.xres_test  = torch.linspace(*x_range, self.xrespts)
+
+        # --- Optional diagnostic flags ---
+        self.random_collocation_pts  = False  # Resample collocation points each step
+        self.gradient_norm_tracking  = False
+        self.gradient_tracking       = False
+        self.weights_tracking        = False
+
+        # --- Training history ---
+        self.loss_list            = []
+        self.test_loss_list       = []
+        self.res_history          = []   # reserved for future use
+        self.res_epoch_history    = []   # reserved for future use
+        self.gradient_norm_history = []
+        self.gradient_history     = []
+        self.weight_history       = []
+
+    # =====================================================================
+    # Analytic and NN trial solutions
+    # =====================================================================
+
+    def analytic_solution(self):
+        """Return the exact solutions (psi1, psi2) evaluated on self.x_test."""
+        x = self.x_test.view(-1, 1)
+        psi1 = torch.sin(x)
+        psi2 = 1 + x**2
+        return psi1, psi2
+
+    def nn_solution(self):
+        """Return the NN trial solutions (psi1, psi2) evaluated on self.x_test."""
+        x    = self.x_test.view(-1, 1)
+        N    = self.network(x)
+        psi1 = x * N[:, 0:1]
+        psi2 = 1 + x * N[:, 1:2]
+        return psi1, psi2
+
+    # =====================================================================
+    # Plots
+    # =====================================================================
+
+    def plotit(self):
+        """Live plot comparing NN trial solutions to the analytic solutions."""
+        plt.clf()
+
+        with torch.no_grad():
+            psi1_nn, psi2_nn     = self.nn_solution()
+            psi1_true, psi2_true = self.analytic_solution()
+            x = self.x_test.view(-1, 1).detach().numpy()
+
+            psi1_nn   = psi1_nn.detach().numpy()
+            psi2_nn   = psi2_nn.detach().numpy()
+            psi1_true = psi1_true.detach().numpy()
+            psi2_true = psi2_true.detach().numpy()
+
+        plt.plot(x, psi1_nn,   color='red',      linestyle='-',  label=r'NN Approx $\hat{\psi}_1$')
+        plt.plot(x, psi1_true, color='#ff7f0e',  linestyle='',   marker='.', label=r'Exact ${\psi}_1$')
+        plt.plot(x, psi2_nn,   color='blue',     linestyle='-',  label=r'NN Approx $\hat{\psi}_2$')
+        plt.plot(x, psi2_true, color='green',    linestyle=' ',  marker='.', label=r'Exact $\hat{\psi}_2$')
+        plt.legend()
+        plt.title(f'Mode 1 | Solution after {self.epoch} epochs | Loss={self.loss:.8f}')
+        plt.pause(0.1)
+
+    def plot_true_solution_error(self):
+        """Plot pointwise absolute error |psi_nn - psi_true| for each equation."""
+        self.network.eval()
+
+        with torch.no_grad():
+            x             = self.x_test.view(-1, 1)
+            psi1_nn, psi2_nn     = self.nn_solution()
+            psi1_true, psi2_true = self.analytic_solution()
+
+            err1 = (psi1_nn - psi1_true).abs().cpu().detach().numpy()
+            err2 = (psi2_nn - psi2_true).abs().cpu().detach().numpy()
+            x_np = x.cpu().detach().numpy()
+
+        plt.figure()
+        plt.plot(x_np, err1, 'r-', label='|Error ψ₁|')
+        plt.plot(x_np, err2, 'b-', label='|Error ψ₂|')
+        plt.xlabel('x')
+        plt.ylabel('Pointwise Error')
+        plt.title('Mode 1 | True Solution Error vs x')
+        plt.legend()
+        plt.grid(True)
+        plt.show()
+
+    def collect_residuals(self):
+        """Compute ODE residuals on the high-resolution grid self.xres_test.
+
+        Returns:
+            res1, res2: residual tensors for equations 1 and 2.
+        """
+        self.network.eval()
+
+        x  = self.xres_test.view(-1, 1).requires_grad_(True)
+        N  = self.network(x)
+        n1 = N[:, 0:1]
+        n2 = N[:, 1:2]
+
+        psi1 = x * n1
+        psi2 = 1 + x * n2
+
+        dpsi1_dx = torch.autograd.grad(
+            psi1, x,
+            grad_outputs=torch.ones_like(psi1),
+            retain_graph=True
+        )[0]
+
+        dpsi2_dx = torch.autograd.grad(
+            psi2, x,
+            grad_outputs=torch.ones_like(psi2),
+            retain_graph=False
+        )[0]
+
+        res1 = dpsi1_dx - (
+            torch.cos(x) + psi1**2 + psi2 - (1 + x**2 + torch.sin(x)**2)
+        )
+        res2 = dpsi2_dx - (
+            2*x - (1 + x**2)*torch.sin(x) + psi1*psi2
+        )
+
+        self.network.train()
+        return res1, res2
+
+    def plot_residuals(self, square=False):
+        """Plot ODE residuals vs x.
+
+        Args:
+            square: If True, plot combined squared residual (res1^2 + res2^2).
+                    If False, plot each residual separately.
+        """
+        x = self.xres_test.view(-1, 1).requires_grad_(True)
+        res1, res2 = self.collect_residuals()
+        x_np = x.detach().numpy()
+
+        plt.figure(figsize=(7, 5))
+
+        if not square:
+            plt.plot(x_np, res1.detach().numpy(), color='#ff7f0e', linestyle='-',
+                     label=r'Residual $\mathrm{res}_1$')
+            plt.plot(x_np, res2.detach().numpy(), color='#1f77b4', linestyle='-',
+                     label=r'Residual $\mathrm{res}_2$')
+            plt.title('Mode 1 | Residuals vs x')
+        else:
+            combined_loss = res1**2 + res2**2
+            plt.plot(x_np, combined_loss.detach().numpy(), color='blue', linestyle='-',
+                     label=r'Combined Residual')
+            plt.title('Mode 1 | Combined Squared Residual vs x')
+
+        plt.xlabel('x')
+        plt.ylabel('Residual')
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+
+    def plot_loss_vs_epoch(self, combined=True):
+        """Plot training loss vs epoch on a log scale.
+
+        Args:
+            combined: If True, sum both equation losses into one curve.
+                      If False, plot each equation's loss separately.
+        """
+        loss_array = np.array(self.loss_list)
+
+        plt.figure()
+
+        if combined:
+            total_loss = loss_array[:, 0] + loss_array[:, 1] if loss_array.ndim == 2 else loss_array
+            plt.plot(total_loss, 'm-', label='Combined Loss')
+        else:
+            if loss_array.ndim == 2:
+                plt.plot(loss_array[:, 0], 'r-', label='Loss Eqn 1')
+                plt.plot(loss_array[:, 1], 'b-', label='Loss Eqn 2')
+            else:
+                plt.plot(loss_array, 'r-', label='Loss')
+
+        plt.xlabel('Epoch')
+        plt.ylabel('Loss')
+        plt.yscale('log')
+        plt.title('Mode 1 | Training Loss vs Epoch')
+        plt.legend()
+        plt.grid(True)
+        plt.show()
+
+    def plot_train_vs_test_loss(self):
+        """Overlay training and test loss curves on a log scale."""
+        plt.figure()
+        plt.plot(self.loss_list,      'r-', alpha=0.7, label='Train Loss')
+        plt.plot(self.test_loss_list, 'b-', alpha=0.7, label='Test Loss')
+        plt.yscale('log')
+        plt.xlabel('Epoch')
+        plt.ylabel('Loss')
+        plt.title('Mode 1 | Train vs Test Loss')
+        plt.legend()
+        plt.grid(True)
+        plt.show()
+
+    def diagnostics(self):
+        """Run all post-training diagnostic plots."""
+        self.plot_true_solution_error()
+        self.plot_residuals(False)
+        self.plot_residuals(True)
+        self.plot_loss_vs_epoch(False)
+        self.plot_train_vs_test_loss()
+
+    # =====================================================================
+    # Training
+    # =====================================================================
+
+    def compute_test_loss(self):
+        """Evaluate the physics residual loss on the high-resolution test grid.
+
+        Used to monitor generalisation; does not affect the optimiser.
+        """
+        self.network.eval()
+
+        x     = self.xres_test.detach().clone().view(-1, 1).requires_grad_(True)
+        n_out = self.network(x)
+        psi1  = x * n_out[:, 0:1]
+        psi2  = 1 + x * n_out[:, 1:2]
+
+        dpsi1 = torch.autograd.grad(psi1, x, grad_outputs=torch.ones_like(psi1), create_graph=True)[0]
+        dpsi2 = torch.autograd.grad(psi2, x, grad_outputs=torch.ones_like(psi2), create_graph=False)[0]
+
+        r1 = dpsi1 - (torch.cos(x) + psi1**2 + psi2 - (1 + x**2 + torch.sin(x)**2))
+        r2 = dpsi2 - (2*x - (1 + x**2)*torch.sin(x) + psi1*psi2)
+
+        loss = self.loss_fn(r1, torch.zeros_like(r1)) + self.loss_fn(r2, torch.zeros_like(r2))
+        self.network.train()
+        return loss.item()
+
+    def train_step(self):
+        """Perform one epoch of training over the collocation points."""
+
+        # Optionally resample collocation points uniformly at random each step
+        if self.random_collocation_pts:
+            self.train_set.data_in = (
+                self.x_range[0] + (self.x_range[1] - self.x_range[0]) * torch.rand(self.num_samples)
+            )
+
+        for batch in self.train_loader:
+            batch = batch.view(-1, 1)
+            batch.requires_grad_(True)
+
+            x     = batch
+            n_out = self.network(x)
+            n1    = n_out[:, 0:1]
+            n2    = n_out[:, 1:2]
+
+            # Trial solutions satisfying BCs exactly:
+            #   psi1(0) = 0 enforced by x * N1(x)
+            #   psi2(0) = 1 enforced by 1 + x * N2(x)
+            psi_1 = x * n1
+            psi_2 = 1 + x * n2
+
+            dpsi1_dx = torch.autograd.grad(
+                psi_1, x, grad_outputs=torch.ones_like(psi_1), create_graph=True
+            )[0]
+            dpsi2_dx = torch.autograd.grad(
+                psi_2, x, grad_outputs=torch.ones_like(psi_2), create_graph=True
+            )[0]
+
+            # Physics residuals: LHS - RHS of each ODE should be zero
+            eqn1_loss = dpsi1_dx - (torch.cos(x) + psi_1**2 + psi_2 - (1 + x**2 + torch.sin(x)**2))
+            eqn2_loss = dpsi2_dx - (2*x - (1 + x**2)*torch.sin(x) + psi_1*psi_2)
+
+            loss = (self.loss_fn(eqn1_loss, torch.zeros_like(eqn1_loss)) +
+                    self.loss_fn(eqn2_loss, torch.zeros_like(eqn2_loss)))
+
+            self.loss_list.append(loss.item())
+            self.loss = self.loss_list[-1]
+
+            self.optimiser.zero_grad()
+            loss.backward()
+
+            if self.gradient_tracking:
+                self.collect_gradients()
+
+            if self.gradient_norm_tracking:
+                self.collect_gradient_norms()
+
+            if self.weights_tracking:
+                self.collect_weights()
+
+            self.optimiser.step()
+
+    def train(self, plot_output=True):
+        """Run the training loop for self.epochs epochs.
+
+        Args:
+            plot_output: If True, display a live solution plot at regular intervals.
+        """
+        self.network.train(True)
+        plt.ion()
+
+        for self.epoch in range(self.epochs):
+
+            if plot_output and (self.epoch % max(1, self.epochs // 5) == 0
+                                or self.epoch == self.epochs - 1):
+                print(self.epoch)
+                self.plotit()
+
+            # Record test loss before the weight update
+            self.test_loss_list.append(self.compute_test_loss())
+            self.train_step()
+
+        print(f'final loss = {self.loss}')
+
+
+# =============================================================================
+# Main
+# =============================================================================
+
+start = time.time()
+
+seed = 2
+
+# Reproducibility
+torch.manual_seed(seed)
+np.random.seed(seed)
+random.seed(seed)
+torch.use_deterministic_algorithms(True)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark     = False
+
+
+# Parameters
+x_range    = (0, 3)
+num_points = 30   # resolution of solution plots
+
+network      = Fitter(num_hidden_nodes=10)
+train_set    = DataSet(num_samples=10, x_range=x_range)
+epochs       = 15000
+train_loader = torch.utils.data.DataLoader(dataset=train_set, batch_size=10, shuffle=False)
+loss_fn      = torch.nn.MSELoss()
+optimiser    = torch.optim.Adam(network.parameters(), lr=1e-3)
+
+Solver = PinnSolver(network, train_set, epochs, train_loader, loss_fn, optimiser,
+                    x_range, num_points, seed)
+
+# Use a denser grid for residual / test-loss evaluation
+Solver.xrespts   = 2000
+Solver.xres_test = torch.linspace(*x_range, Solver.xrespts)
+
+# Enable random collocation-point resampling each step
+Solver.random_collocation_pts = True
+
+curriculum_learn = False
+
+if curriculum_learn:
+    # Stage 1: train on a short interval to establish a good initial solution
+    Solver.x_range    = (0, 1)
+    Solver.epochs     = 500
+    Solver.train_set  = DataSet(num_samples=10, x_range=Solver.x_range)
+    Solver.train_loader = torch.utils.data.DataLoader(
+        dataset=Solver.train_set, batch_size=10, shuffle=False
+    )
+    Solver.train(plot_output=True)
+
+    # Stage 2: extend to the full interval
+    Solver.x_range    = (0, 3)
+    Solver.epochs     = 15000
+    Solver.train_set  = DataSet(num_samples=10, x_range=Solver.x_range)
+    Solver.train_loader = torch.utils.data.DataLoader(
+        dataset=Solver.train_set, batch_size=10, shuffle=False
+    )
+    Solver.train(plot_output=True)
+else:
+    Solver.train(plot_output=True)
+
+print("time taken =",time.time() - start)
+
+Solver.diagnostics()
+
+Solver.plotit()
+
+# Seed notes:
+# Seed 0  – mediocre
+# Seed 1  – works
+# Seed 2  – mediocre
+# Seed 3  – 
+# Seed 4  – crosses over
