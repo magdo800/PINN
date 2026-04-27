@@ -1,0 +1,254 @@
+import torch
+import matplotlib.pyplot as plt
+
+# -------------------------
+# Dataset
+# -------------------------
+class DataSet(torch.utils.data.Dataset):
+    """
+    Custom PyTorch Dataset for generating (x, y) pairs
+    from a target function over a specified range.
+    """
+    def __init__(self, num_samples, x_range, func):
+        # Generate evenly spaced input values
+        self.x = torch.linspace(x_range[0], x_range[1], num_samples).unsqueeze(1)
+        # Compute corresponding outputs using the target function
+        self.y = func(self.x)
+
+    def __len__(self):
+        # Return number of samples
+        return len(self.x)
+
+    def __getitem__(self, i):
+        # Return a single (input, target) pair
+        return self.x[i], self.y[i]
+
+
+# -------------------------
+# Model
+# -------------------------
+class Fitter(torch.nn.Module):
+    """
+    Simple feedforward neural network for function approximation.
+    
+    Supports three input modes:
+    - "raw": direct input x
+    - "linear": random linear feature projection
+    - "fourier": sinusoidal (Fourier) feature mapping
+    """
+    def __init__(self, num_hidden_nodes,
+                 mode="raw",
+                 num_features=20, scale=10):
+
+        super().__init__()
+
+        self.mode = mode
+
+        # Feature transformation selection
+        if mode == "fourier":
+            self.feat = FourierFeatures(num_features, scale)
+            input_dim = 2 * num_features  # sin + cos
+
+        elif mode == "linear":
+            self.feat = LinearFeatures(num_features)
+            input_dim = num_features
+
+        else:  # raw input
+            self.feat = None
+            input_dim = 1
+
+        # Fully connected layers
+        self.fc1 = torch.nn.Linear(input_dim, num_hidden_nodes)
+        self.fc2 = torch.nn.Linear(num_hidden_nodes, 1)
+
+    def forward(self, x):
+        # Apply feature transformation if enabled
+        if self.feat is not None:
+            x = self.feat(x)
+
+        # Hidden layer with tanh activation
+        h = torch.tanh(self.fc1(x))
+
+        # Output layer
+        return self.fc2(h)
+
+    
+class FourierFeatures(torch.nn.Module):
+    """
+    Maps input into a higher-dimensional space using random
+    Fourier features (sin and cosine projections).
+    """
+    def __init__(self, num_features, scale=10.0):
+        super().__init__()
+        # Random projection matrix
+        self.B = torch.randn(1, num_features) * scale
+
+    def forward(self, x):
+        # Project input and apply sin/cos
+        proj = x @ self.B
+        return torch.cat([torch.sin(proj), torch.cos(proj)], dim=-1)
+
+
+class LinearFeatures(torch.nn.Module):
+    """
+    Simple random linear projection of input into higher dimension.
+    """
+    def __init__(self, num_features, scale=1.0):
+        super().__init__()
+        self.B = torch.randn(1, num_features) * scale
+
+    def forward(self, x):
+        return x @ self.B
+
+
+# -------------------------
+# Function to fit
+# -------------------------
+def target_function(x):
+    """
+    Target function the neural network will learn.
+    High-frequency sine wave.
+    """
+    return torch.sin(10 * x) 
+
+
+# -------------------------
+# Plot NN solution vs function
+# -------------------------
+def plot_solution(model, func, x_range=(-2, 2), num_points=200):
+    """
+    Visualize model predictions against the true function.
+    """
+    model.eval()
+
+    # Generate evaluation points
+    x = torch.linspace(x_range[0], x_range[1], num_points).unsqueeze(1)
+
+    with torch.no_grad():
+        y_true = func(x)
+        y_pred = model(x)
+
+    # Convert tensors to numpy for plotting
+    x = x.squeeze().numpy()
+    y_true = y_true.squeeze().numpy()
+    y_pred = y_pred.squeeze().numpy()
+
+    # Plot results
+    plt.figure(figsize=(8, 5))
+    plt.plot(x, y_true, label="True Function")
+    plt.plot(x, y_pred, linestyle="--", label="Model Prediction")
+
+    plt.legend()
+    plt.title("Neural Network Function Approximation")
+    plt.xlabel("x")
+    plt.ylabel("y")
+    plt.grid(True)
+    plt.show()
+
+
+# -------------------------
+# Setup
+# -------------------------
+# Create dataset and data loader
+dataset = DataSet(num_samples=100, x_range=(-2, 2), func=target_function)
+loader = torch.utils.data.DataLoader(dataset, batch_size=16, shuffle=True)
+
+# Model configuration
+# mode can be "fourier", "linear", or "raw"
+model = Fitter(
+    num_hidden_nodes=60,
+    mode="fourier",
+    num_features=50,
+    scale=10,
+)
+
+# Optimizer and loss function
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+loss_fn = torch.nn.MSELoss()
+epochs = 1000
+
+
+# -------------------------
+# Training loop
+# -------------------------
+for epoch in range(epochs):
+    for x, y in loader:
+        # Forward pass
+        pred = model(x)
+        loss = loss_fn(pred, y)
+
+        # Backpropagation
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+    # Print progress every 20 epochs
+    if epoch % 20 == 0:
+        print(f"Epoch {epoch}, Loss: {loss.item():.6f}")
+
+
+# Plot final fit
+plot_solution(model, target_function, x_range=(-2, 2))
+
+
+# -------------------------
+# (Optional) Train and plot loss of all modes
+# -------------------------
+
+# def train_model(model, loader, epochs=2000, lr=0.001):
+#     """
+#     Train a model and return loss history.
+#     """
+#     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+#     loss_fn = torch.nn.MSELoss()
+#     loss_history = []
+
+#     for epoch in range(epochs):
+#         epoch_loss = 0.0
+
+#         for x, y in loader:
+#             pred = model(x)
+#             loss = loss_fn(pred, y)
+
+#             optimizer.zero_grad()
+#             loss.backward()
+#             optimizer.step()
+
+#             epoch_loss += loss.item()
+
+#         loss_history.append(epoch_loss / len(loader))
+
+#     return loss_history
+
+
+# models = {
+#     "base": Fitter(60, mode="raw"),
+#     "linear": Fitter(60, mode="linear", num_features=50),
+#     "fourier": Fitter(60, mode="fourier", num_features=50, scale=10),
+# }
+
+# losses = {}
+
+# for name, model in models.items():
+#     print(f"Training {name}...")
+#     losses[name] = train_model(model, loader)
+    
+
+# def plot_losses(losses):
+#     """
+#     Plot training loss curves for different models.
+#     """
+#     plt.figure(figsize=(8, 5))
+
+#     for name, loss in losses.items():
+#         plt.plot(loss, label=name)
+
+#     plt.xlabel("Epoch")
+#     plt.yscale("log")
+#     plt.ylabel("Log MSE Loss")
+#     plt.title("Training Loss Comparison")
+#     plt.legend()
+#     plt.grid(True)
+#     plt.show()
+
+# plot_losses(losses)
