@@ -1,3 +1,4 @@
+" Training sweep for SAPINN 50 collocation points, averaged over N runs, as discussed in dissertation section 4.2"
 import torch
 import torch.nn as nn
 import torch.autograd as autograd
