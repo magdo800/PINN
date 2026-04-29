@@ -1,4 +1,5 @@
-""
+""" Train standard vs SAPINN for varying hyperparameters (e.g
+collocation points, epochs), as discussed in dissertation section 4.2"""
 
 import torch
 import torch.nn as nn
