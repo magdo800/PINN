@@ -1,3 +1,5 @@
+""" Visualise SAPINN weight evolution, as discussed in dissertation section 4.2"""
+
 import torch
 import torch.nn as nn
 import torch.autograd as autograd
