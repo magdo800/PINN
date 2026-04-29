@@ -1,0 +1,307 @@
+# -*- coding: utf-8 -*-
+"""LagQ6: PINN solver for 2D PDE (Lagaris Problem 6 in dissertation)"""
+
+import torch
+import torch.utils.data
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+import random
+import time
+
+
+class DataSet(torch.utils.data.Dataset):
+    # Creates a uniform grid of collocation points (num_samples^2 total)
+    def __init__(self, num_samples, x_range, y_range):
+        x = torch.linspace(x_range[0], x_range[1], num_samples)
+        y = torch.linspace(y_range[0], y_range[1], num_samples)
+        grid_x, grid_y = torch.meshgrid(x, y, indexing='ij')
+        self.data_in = torch.stack([grid_x.flatten(), grid_y.flatten()], dim=1)
+        self.x_range, self.y_range = x_range, y_range
+        self.num_samples = num_samples
+
+    def __len__(self):
+        return len(self.data_in)
+
+    def __getitem__(self, i):
+        return self.data_in[i]
+
+
+class Fitter(torch.nn.Module):
+    # Simple 2-layer fully connected network
+    def __init__(self, num_hidden_nodes):
+        super(Fitter, self).__init__()
+        self.fc1 = torch.nn.Linear(2, num_hidden_nodes)
+        self.fc2 = torch.nn.Linear(num_hidden_nodes, 1)
+        torch.nn.init.xavier_uniform_(self.fc1.weight)
+        torch.nn.init.xavier_uniform_(self.fc2.weight)
+
+    def forward(self, xy):
+        h = torch.tanh(self.fc1(xy))
+        return self.fc2(h)
+
+
+class PinnSolver():
+    # Physics-Informed Neural Network (PINN) solver
+    def __init__(self, network, train_set, epochs, train_loader, loss_fn, optimiser,
+                 x_range=(0, 1), y_range=(0, 1), a=3, seed=0, plot_samples=30):
+
+        self.network      = network
+        self.train_set    = train_set
+        self.epochs       = epochs
+        self.train_loader = train_loader
+        self.loss_fn      = loss_fn
+        self.optimiser    = optimiser
+
+        self.x_range      = x_range
+        self.y_range      = y_range
+        self.a            = a
+        self.seed         = seed
+        self.plot_samples = plot_samples  # resolution for test grid (e.g. 30x30)
+
+        # training options
+        self.plot_live_training     = False
+        self.random_collocation_pts = False   # True → random sampling each epoch
+        self.num_collocation_pts    = self.train_set.num_samples ** 2
+
+        # logging
+        self.epoch          = 0
+        self.loss           = 0.
+        self.loss_list      = []
+        self.test_loss_list = []
+        self.test_epochs    = []
+
+        # true error tracking vs analytical solution
+        self.train_true_error_list = []
+        self.test_true_error_list  = []
+        self.true_error_epochs     = []
+
+        # precompute test grid
+        n = self.plot_samples
+        xs = torch.linspace(*self.x_range, n)
+        ys = torch.linspace(*self.y_range, n)
+        X, Y = torch.meshgrid(xs, ys, indexing='ij')
+        self._test_xf = X.flatten().unsqueeze(1)
+        self._test_yf = Y.flatten().unsqueeze(1)
+        self._test_X  = X
+        self._test_Y  = Y
+
+        # precompute training grid
+        nt  = self.train_set.num_samples
+        xst = torch.linspace(*self.x_range, nt)
+        yst = torch.linspace(*self.y_range, nt)
+        Xt, Yt = torch.meshgrid(xst, yst, indexing='ij')
+        self._train_xf = Xt.flatten().unsqueeze(1)
+        self._train_yf = Yt.flatten().unsqueeze(1)
+        self._train_X  = Xt
+        self._train_Y  = Yt
+
+    # exact analytical solution
+    def psi_exact(self, x, y):
+        a = self.a
+        return torch.exp(-(a * x + y) / 5) * torch.sin(a**2 * x**2 + y)
+
+    # boundary-matching function (enforces Dirichlet BCs)
+    def A(self, x, y):
+        return (
+            (1 - x) * self.psi_exact(torch.zeros_like(x), y)
+          +       x  * self.psi_exact(torch.ones_like(x),  y)
+          + (1 - y) * (self.psi_exact(x, torch.zeros_like(y))
+                       - (1 - x) * self.psi_exact(torch.zeros_like(x), torch.zeros_like(y))
+                       -       x  * self.psi_exact(torch.ones_like(x),  torch.zeros_like(y)))
+          +       y  * (self.psi_exact(x, torch.ones_like(y))
+                       - (1 - x) * self.psi_exact(torch.zeros_like(x), torch.ones_like(y))
+                       -       x  * self.psi_exact(torch.ones_like(x),  torch.ones_like(y)))
+        )
+
+    # trial solution = exact BC + NN correction term
+    def psi_trial(self, x, y):
+        xy = torch.cat([x, y], dim=1)
+        N  = self.network(xy)
+        return self.A(x, y) + x * (1 - x) * y * (1 - y) * N
+
+    # PDE residual: Laplacian(psi) - f(x,y)
+    def compute_residual(self, x, y):
+        a   = self.a
+        psi = self.psi_trial(x, y)
+
+        dpsi_dx = torch.autograd.grad(psi, x, grad_outputs=torch.ones_like(psi), create_graph=True)[0]
+        dpsi_dy = torch.autograd.grad(psi, y, grad_outputs=torch.ones_like(psi), create_graph=True)[0]
+
+        d2psi_dx2 = torch.autograd.grad(dpsi_dx, x, grad_outputs=torch.ones_like(dpsi_dx), create_graph=True)[0]
+        d2psi_dy2 = torch.autograd.grad(dpsi_dy, y, grad_outputs=torch.ones_like(dpsi_dy), create_graph=True)[0]
+
+        laplacian = d2psi_dx2 + d2psi_dy2
+
+        f = torch.exp(-(a * x + y) / 5) * (
+              ((-4 / 5) * a**3 * x - 2 / 5 + 2 * a**2) * torch.cos(a**2 * x**2 + y)
+            + (1 / 25 - 1 - 4 * a**4 * x**2 + a**2 / 25) * torch.sin(a**2 * x**2 + y)
+        )
+
+        return laplacian - f
+
+    # evaluate residual loss on fixed test grid
+    def compute_test_loss(self):
+        self.network.eval()
+        xf = self._test_xf.detach().clone().requires_grad_(True)
+        yf = self._test_yf.detach().clone().requires_grad_(True)
+
+        residual = self.compute_residual(xf, yf)
+        loss = self.loss_fn(residual, torch.zeros_like(residual))
+
+        self.network.train()
+        return loss.item()
+
+    # compute true error vs analytical solution
+    def compute_true_errors(self):
+        self.network.eval()
+        with torch.no_grad():
+            psi_tr = self.psi_trial(self._train_xf, self._train_yf)
+            psi_ex_tr = self.psi_exact(self._train_xf, self._train_yf)
+            train_err = (psi_tr - psi_ex_tr).abs().mean().item()
+
+            psi_te = self.psi_trial(self._test_xf, self._test_yf)
+            psi_ex_te = self.psi_exact(self._test_xf, self._test_yf)
+            test_err = (psi_te - psi_ex_te).abs().mean().item()
+
+        self.network.train()
+        return train_err, test_err
+
+    # optional live heatmap during training
+    def _plot_heatmap_live(self):
+        n  = self.plot_samples
+        X  = self._test_X
+        Y  = self._test_Y
+        xf = self._test_xf
+        yf = self._test_yf
+
+        self.network.eval()
+        with torch.no_grad():
+            psi_nn   = self.psi_trial(xf, yf).reshape(n, n).numpy()
+            psi_true = self.psi_exact(xf, yf).reshape(n, n).numpy()
+            error    = np.abs(psi_nn - psi_true)
+        self.network.train()
+
+        plt.clf()
+        fig = plt.gcf()
+        fig.set_size_inches(14, 4)
+
+        titles = ['NN solution', 'Exact solution', '|Error|']
+        datas  = [psi_nn, psi_true, error]
+        for i, (data, title) in enumerate(zip(datas, titles)):
+            ax = fig.add_subplot(1, 3, i + 1)
+            im = ax.contourf(X.numpy(), Y.numpy(), data, levels=40)
+            fig.colorbar(im, ax=ax)
+            ax.set_title(f'{title} | Epoch {self.epoch}')
+            ax.set_xlabel('x'); ax.set_ylabel('y')
+
+        plt.tight_layout()
+        plt.pause(0.1)
+
+    # single training step
+    def train_step(self):
+        if self.random_collocation_pts:
+            # random sampling each epoch (Monte Carlo PINN)
+            pts = torch.rand(self.num_collocation_pts, 2)
+            x = pts[:, 0:1].requires_grad_(True)
+            y = pts[:, 1:2].requires_grad_(True)
+
+            residual = self.compute_residual(x, y)
+            loss     = self.loss_fn(residual, torch.zeros_like(residual))
+
+            self.optimiser.zero_grad()
+            loss.backward()
+            self.optimiser.step()
+
+            self.loss_list.append(loss.item())
+            self.loss = loss.item()
+
+        else:
+            # deterministic grid sampling
+            for batch in self.train_loader:
+                x = batch[:, 0:1].requires_grad_(True)
+                y = batch[:, 1:2].requires_grad_(True)
+
+                residual = self.compute_residual(x, y)
+                loss     = self.loss_fn(residual, torch.zeros_like(residual))
+
+                self.optimiser.zero_grad()
+                loss.backward()
+                self.optimiser.step()
+
+                self.loss_list.append(loss.item())
+                self.loss = loss.item()
+
+    # training loop
+    def train(self, plot_every=500):
+        self.network.train(True)
+        plt.ion()
+
+        for self.epoch in range(self.epochs):
+
+            if self.epoch % plot_every == 0 or self.epoch == self.epochs - 1:
+                test_loss = self.compute_test_loss()
+                self.test_loss_list.append(test_loss)
+                self.test_epochs.append(self.epoch)
+
+                print(f'Epoch {self.epoch:5d} | Train loss {self.loss:.6e} | Test loss {test_loss:.6e}')
+
+                if self.plot_live_training:
+                    self._plot_heatmap_live()
+
+                tr_err, te_err = self.compute_true_errors()
+                self.train_true_error_list.append(tr_err)
+                self.test_true_error_list.append(te_err)
+                self.true_error_epochs.append(self.epoch)
+
+            self.train_step()
+
+        plt.ioff()
+        print(f'Final train loss = {self.loss:.6e}')
+
+    # diagnostics plots
+    def plot_loss(self):
+        fig, ax = plt.subplots()
+        ax.plot(self.loss_list, 'r-', alpha=0.7, label='Train loss')
+        ax.plot(self.test_epochs, self.test_loss_list, 'b-o', markersize=4, label='Test loss')
+        ax.set_yscale('log')
+        ax.set_xlabel('Epoch'); ax.set_ylabel('Loss')
+        ax.legend(); ax.grid(True)
+        plt.tight_layout(); plt.show()
+
+    def diagnostics(self):
+        self.plot_loss()
+
+
+# -------------------- RUN -------------------- #
+
+start_time = time.time()
+
+# reproducibility
+seed = 2
+torch.manual_seed(seed); np.random.seed(seed); random.seed(seed)
+
+x_range = (0., 1.)
+y_range = (0., 1.)
+
+network      = Fitter(num_hidden_nodes=10)
+train_set    = DataSet(num_samples=10, x_range=x_range, y_range=y_range)
+
+epochs       = 1000
+train_loader = torch.utils.data.DataLoader(train_set, batch_size=len(train_set), shuffle=False)
+
+loss_fn   = torch.nn.MSELoss()
+optimiser = torch.optim.Adam(network.parameters(), lr=1e-3)
+
+Solver = PinnSolver(network, train_set, epochs, train_loader, loss_fn, optimiser,
+                    x_range=x_range, y_range=y_range, a=3, seed=seed, plot_samples=30)
+
+# runtime options (important for experiments)
+Solver.plot_live_training     = False
+Solver.random_collocation_pts = False   # True → random sampling each epoch
+# Solver.num_collocation_pts  = 100      # optional override
+
+Solver.train(plot_every=500)
+Solver.diagnostics()
+
+print(f"Took {time.time() - start_time} seconds")
