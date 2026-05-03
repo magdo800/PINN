@@ -2,7 +2,7 @@ This Folder is on Lagaris Question 4 "A Coupled System of ODEs", section 3.1, in
 
 Lag_Q4_main runs quickly including on CPU (within minutes or less depending on number of epochs). The 100 seed sweep understandably takes 100x longer.
 
-Hyperparameters in Lag_Q4_main can be changed in the section under the "Main" comment, including turning on or off random resampling, or curriculum learning.
+Hyperparameters in Lag_Q4_main can be changed in the section under the "Main" comment, including turning on or off random resampling, or curriculum learning. An example of "mode 1", successful convergence is seed=1. An example of "mode 2", unsuccessful convergence is seed=2. An example of "mode 3", unsuccessful convergence is seed=4. 
 
 **Hyperparameters**
 
