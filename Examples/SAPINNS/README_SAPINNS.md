@@ -1,8 +1,6 @@
-This Folder is on SAPINNs application to a 1D Poisson Equation, section 4.2 in the dissertation. File contains code SAPINNS_main where the main neural network training experiment is performed. It allows for training with SAPINNs vs standard PINNs. It also contains a sweeps+animate folder which contains: resample_frequency.py that tests convergence over different resampling frequencies, and sampling_method that compares over the different sampling types for both fixed and resampling (as outlined in the dissertation).
+This Folder is on SAPINNs application to a 1D Poisson Equation, section 4.2 in the dissertation. File contains code SAPINNS_main where the main neural network training experiment is performed. It allows for training with SAPINNs vs standard PINNs. It also contains a sweeps+animate folder which contains: SAPINNS_G_ascent.py that performs a sweep on different learning rates for gradient ascent. SAPINNs_average_over_N_runs.py that compares standard vs SAPINNs for the 50 collocation point problem. SAPINNS_animate_weights.py that creates an animation of the evolution of the SAPINNs during training. Some examples of these animations are contained in Weight_evolution_gifs folder.
 
-LagQ6_main runs quickly including on CPU (within minutes or less depending on number of epochs). The experiments take about 30x longer.
-
-
+SAPINNS_main and SAPINNS_animate_weights.py runs quickly including on CPU (within minutes or less depending on number of epochs). The experiments take longer, depending on how many runs the sweeps are over. 
 
 **Hyperparameters:**
 
