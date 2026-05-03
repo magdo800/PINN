@@ -455,9 +455,15 @@ if __name__ == '__main__':
     # Frequency study configurations
     configs = [
         ('fixed_grid', False, None),
-        ('resample_every_1000', True, 100),
-        ('resample_every_2000', True, 200),
-        ('resample_every_3000', True, 300),
+    
+        # Resampling frequencies matching experiment description
+        ('resample_every_1',    True, 1),
+        ('resample_every_10',   True, 10),
+        ('resample_every_50',   True, 50),
+        ('resample_every_100',  True, 100),
+        ('resample_every_250',  True, 250),
+        ('resample_every_500',  True, 500),
+        ('resample_every_1000', True, 1000),
     ]
 
     print("Experiment setup complete. Ready to run.")
