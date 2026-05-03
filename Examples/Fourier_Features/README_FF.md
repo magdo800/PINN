@@ -1,3 +1,9 @@
+This Folder is on the simple Fourier Feature fitting to a function to sin(10x), "Spectral Bias and Fourier Features", section 4.3, in the dissertation. File contains code FF_simple where the main neural network training experiment is performed.
+
+FF_simple runs quickly including on CPU (within minutes or less depending on number of epochs).
+
+Hyperparameters can be changed in the section under the "Main" comment.
+
 **Dataset**
 - num_samples: 100
 - x_range: (-2, 2)
