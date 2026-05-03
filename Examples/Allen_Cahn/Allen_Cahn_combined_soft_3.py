@@ -1,12 +1,11 @@
 """
-Allen-Cahn PINN — pure PyTorch
+
+Allen-Cahn PINN, section 4.3 in dissertation. 
 Vanilla MLP vs Fourier Feature MLP
 
 PDE:  u_t - d*u_xx - 5*(u - u^3) = 0,  x in [-1,1], t in [0,1]
 IC:   u(x,0) = x^2 * cos(pi*x)
 BC:   u(-1,t) = u(1,t) = -1
-
-Hyper-parameters follow Wang et al. (2022), arXiv:2111.02801
 """
 
 import numpy as np
