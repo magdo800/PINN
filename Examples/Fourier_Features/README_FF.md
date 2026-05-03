@@ -1,4 +1,4 @@
-dataset:
+**dataset**:
 num_samples: 100
 x_range: (-2, 2)
 target_function: sin(10x)
