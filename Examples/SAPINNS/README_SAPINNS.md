@@ -1,4 +1,6 @@
+This Folder is on SAPINNs application to a 1D Poisson Equation, section 4.2 in the dissertation. File contains code SAPINNS_main where the main neural network training experiment is performed. It contains  It also contains a Sampling_experiments folder which contains: resample_frequency.py that tests convergence over different resampling frequencies, and sampling_method that compares over the different sampling types for both fixed and resampling (as outlined in the dissertation).
 
+LagQ6_main runs quickly including on CPU (within minutes or less depending on number of epochs). The experiments take about 30x longer.
 
 
 
