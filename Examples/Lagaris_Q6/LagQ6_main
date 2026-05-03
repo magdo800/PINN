@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""LagQ6: PINN solver for 2D PDE (Lagaris Problem 6 in dissertation)"""
+"""LagQ6: PINN solver for 2D PDE (Lagaris Problem 6, section 3.2, in dissertation)"""
 
 import torch
 import torch.utils.data
