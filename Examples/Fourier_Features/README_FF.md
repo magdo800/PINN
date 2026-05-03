@@ -2,7 +2,9 @@ This Folder is on the simple Fourier Feature fitting to a function to sin(10x), 
 
 FF_simple runs quickly including on CPU (within minutes or less depending on number of epochs).
 
-Hyperparameters can be changed in the section under the "Main" comment.
+Hyperparameters can be changed in the code, in the section under the "Setup" comment.
+
+**Hyperparameters**
 
 **Dataset**
 - num_samples: 100
