@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """
+LagQ6: Sampling Methods experiment for Lagaris Problem 6, section 3.2 in dissertation.
 Sampling Method Experiment
 ==========================
 
