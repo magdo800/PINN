@@ -1,7 +1,7 @@
-# 
-
 
 """
+LagQ6: Resampling frequency experiment for Lagaris Problem 6, section 3.2 in dissertation.
+
 Resampling Frequency Experiment
 ================================
 Compares a fixed collocation grid baseline against random resampling at
