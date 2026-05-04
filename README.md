@@ -8,7 +8,7 @@ A dissertation submitted for the degree of *MMath Mathematics* at Durham Univers
 
 This project investigates physics-informed neural networks (PINNs) as a framework for solving differential equations. Starting from the foundations of neural networks and automatic differentiation, it progresses through concrete examples, training difficulties, and modern mitigation strategies, before extending to parametric solution families and operator learning.
 
-The dissertation is self-contained for anyone with a solid undergraduate maths background — no prior knowledge of PINNs or PyTorch is assumed.
+The dissertation is built from the ground up for anyone with a solid maths background — no prior knowledge of neural networks or PyTorch is assumed.
 
 ---
 
@@ -50,13 +50,13 @@ Solution bundles for parametric families of ODEs, and Physics-Informed Deep Oper
     └── Chapter5/           # Solution bundle and DeepONet figures
 ```
 
-Each example folder contains its own `README` with a description of the experiment and network hyperparameters.
+Each example folder contains its own `README` with a description of the experiment, code,  and network hyperparameters.
 
 ---
 
 ## Highlights
 
-![Allen–Cahn solution with Fourier features](Images/Chapter4/Allen_Cahn/Allen_solution_Fourier_sigma2.0.png)
+![Allen–Cahn solution with Fourier features](Images/Chapter3/LagQ6/50kepoch_seed0_random_contour.png)
 *PINN solution to the Allen–Cahn equation using Fourier feature embeddings, alongside the true solution and pointwise absolute error.*
 
 ![2D Poisson equation Comparison Sampling Method](Images/Chapter3/LagQ6/comparison_resample_error_curves.png)
