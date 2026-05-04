@@ -50,17 +50,18 @@ Solution bundles for parametric families of ODEs, and Physics-Informed Deep Oper
     └── Chapter5/           # Solution bundle and DeepONet figures
 ```
 
-Each example folder contains its own `README` with a description of the experiment, code,  and network hyperparameters.
+Each example folder contains its own `README` with a description of the experiment, code, and network hyperparameters.
 
 ---
 
 ## Highlights
 
-![Allen–Cahn solution with Fourier features](Images/Chapter3/LagQ6/50kepoch_seed0_random_contour.png)
-*PINN solution to the Allen–Cahn equation using Fourier feature embeddings, alongside the true solution and pointwise absolute error.*
+![2D Poisson equation neural network solution](Images/Chapter3/LagQ6/50kepoch_seed0_random_contour.png)
+*PINN solution to the 2D Poisson equation using random collocation points, alongside the exact solution and pointwise absolute error.*
 
-![2D Poisson equation Comparison Sampling Method](Images/Chapter3/LagQ6/comparison_resample_error_curves.png)
-*Fourier features reduce the relative error from 0.52 to 0.089 compared to a standard network.*
+<img src="Images/Chapter3/LagQ6/comparison_resample_error_curves.png" width="500"/>
+
+*Relative error over training for different collocation resampling strategies on the 2D Poisson equation.*
 
 ---
 
@@ -87,3 +88,4 @@ Each example folder contains its own `README` with a description of the experime
 ## Acknowledgements
 
 This work used Durham University's NCC cluster.
+
