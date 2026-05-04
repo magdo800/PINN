@@ -1,5 +1,9 @@
+This Folder is on the Solution Bundle problem, section 5.1 in the dissertation. File contains code Bundles.py where the neural network training experiment is performed.
 
-Consider scaling down network width/depth to run quickly on CPU.
+Bundles.py runs in under a minute on a GPU.  Consider scaling down network width/depth to run quickly on CPU.
+
+Hyperparameters can be changed in the code, in the section under the "Setup" comment.
+
 
 **Problem (Parametric ODE)**
 - ODE:
