@@ -1,6 +1,8 @@
-# PI-DeepONet for Advection Equation (Section 5.2)
+This Folder is on the PI-DeepONet, finding the operator mapping the initial condition to the solution for the advection equation, "PI-DeepONet", section 5.2 in the dissertation. File contains code DeepO.py where the neural network training experiment is performed.
 
-Physics-informed DeepONet for learning the **solution operator** of the 1D advection equation.
+DeepO.py takes 1-2 hours on a GPU. Consider scaling down
+
+Hyperparameters can be changed in the code, in the section under the "Setup" comment. Consider scaling down problem (network size, number of points and epochs) to run in a reasonable amount of time on a CPU.
 
 ---
 
