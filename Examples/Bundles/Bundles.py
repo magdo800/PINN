@@ -1,5 +1,6 @@
 
 """
+Section 5.1 in dissertation.
 Solution Bundle for parametric ODE: y'(x) + lambda*y(x) = 0, y(0) = 1
 Exact solution: y(x; lambda) = exp(-lambda * x)
 Parameter range: lambda in [0.5, 3.0]
