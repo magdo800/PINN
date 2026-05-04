@@ -1,107 +1,79 @@
-# Physics-Informed Neural Networks — MMath Dissertation
+# Physics-Informed Neural Networks
 
-This repository contains all code accompanying the MMath dissertation *Physics-Informed Neural Networks* by Andrey Marshall (Durham University, 2026), supervised by Dr Kasper Peeters.
-
-The dissertation develops the theory of PINNs from first principles and applies them to a range of differential equations, investigating training methodology, failure modes, and advanced techniques. This repository allows you to reproduce every figure in the dissertation and experiment with the hyperparameters yourself.
+A dissertation submitted for the degree of *MMath Mathematics* at Durham University, supervised by Dr Kasper Peeters.
 
 ---
 
-## What are PINNs?
+## Overview
 
-Physics-Informed Neural Networks (PINNs) use neural networks to solve differential equations. Rather than fitting to data, the network is trained by minimising how much it violates the governing equation at a set of sample points (called collocation points). This repository is a practical companion to that idea — if you are new to PINNs, working through the examples in order is a good way to build intuition alongside reading the dissertation.
+This project investigates physics-informed neural networks (PINNs) as a framework for solving differential equations. Starting from the foundations of neural networks and automatic differentiation, it progresses through concrete examples, training difficulties, and modern mitigation strategies, before extending to parametric solution families and operator learning.
+
+The dissertation is self-contained for anyone with a solid undergraduate maths background — no prior knowledge of PINNs or PyTorch is assumed.
+
+---
+
+## Dissertation Structure
+
+**Chapter 1 – Introduction**  
+Motivation and context for PINNs, from early work by Lagaris et al. (1998) to the modern revival by Raissi et al. (2019).
+
+**Chapter 2 – Physics-Informed Neural Networks**  
+Core theory: network architecture, physics-informed loss functions, automatic differentiation and backpropagation, optimisation algorithms (SGD, Adam, L-BFGS), vanishing gradients, Glorot initialisation, and the Universal Approximation Theorem.
+
+**Chapter 3 – Applications to Differential Equations**  
+Solving a coupled ODE system and a 2D Poisson equation following the Lagaris method (hard-enforced boundary conditions). Covers overfitting diagnostics, curriculum learning, collocation point strategies, and quasi-random sampling schemes.
+
+**Chapter 4 – Improving PINN Training**  
+Soft-constraint formulation, residual-based adaptive sampling (RAR, RAD), self-adaptive PINNs (SA-PINNs), Fourier feature embeddings to address spectral bias, and causal training for time-dependent problems. Demonstrated on the Allen–Cahn equation.
+
+**Chapter 5 – Solution Families**  
+Solution bundles for parametric families of ODEs, and Physics-Informed Deep Operator Networks (PI-DeepONets) for learning solution operators. Applied to the 1D advection equation.
 
 ---
 
 ## Repository Structure
 
-Each folder corresponds to one example or experiment from the dissertation and is fully self-contained. Every folder has its own `README.md` with a description of the problem, the network architecture, and a full list of hyperparameters.
+```
+├── Examples/
+│   ├── Allen_Cahn/         # Fourier features on the Allen–Cahn equation
+│   ├── Bundles/            # Parametric solution bundles
+│   ├── Fourier_Features/   # Spectral bias and Fourier feature embeddings
+│   ├── Lagaris_Q4/         # Coupled ODE system (Lagaris problem 4)
+│   ├── Lagaris_Q6/         # 2D Poisson equation (Lagaris problem 6)
+│   ├── PI-DeepONet/        # Physics-informed Deep Operator Network
+│   └── SAPINNS/            # Self-adaptive PINNs
+│
+└── Images/
+    ├── Chapter2/           # Neural network diagrams, activation functions
+    ├── Chapter3/           # Lagaris Q4 and Q6 results
+    ├── Chapter4/           # SA-PINNs, Fourier features, Allen–Cahn plots
+    └── Chapter5/           # Solution bundle and DeepONet figures
+```
 
-```
-.
-├── lagaris_ode_system/         # Chapter 2 — Coupled ODE system (Lagaris Problem 4)
-├── lagaris_poisson_2d/         # Chapter 2 — 2D Poisson equation (Lagaris Problem 6)
-├── adaptive_sampling/          # Chapter 3 — RAR and RAD adaptive sampling
-├── self_adaptive_pinns/        # Chapter 3 — SA-PINNs with trainable collocation weights
-├── spectral_bias_fourier/      # Chapter 3 — Spectral bias and Fourier feature embeddings
-├── allen_cahn/                 # Chapter 3 — Allen–Cahn equation with Fourier features
-├── solution_bundles/           # Chapter 4 — Parametric ODE families (solution bundles)
-├── deeponet_advection/         # Chapter 4 — PI-DeepONet for the 1D advection equation
-└── figures/                    # All figures as they appear in the dissertation
-```
+Each example folder contains its own `README` with a description of the experiment and network hyperparameters.
+
+---
+
+## Key Results
+
+- Curriculum learning improved convergence on the coupled ODE from 22% to 100% across 100 random seeds.
+- Hammersley quasi-random sampling achieved the lowest relative error ($6.1 \times 10^{-5}$) on the Poisson problem.
+- SA-PINNs reduced mean relative error by ~3.4× over standard PINNs with few collocation points.
+- Fourier features reduced relative error on Allen–Cahn from $5.2 \times 10^{-1}$ to $8.9 \times 10^{-2}$.
+- The PI-DeepONet achieved a median relative $L^2$ error of $0.125$ across 200 test functions on the advection equation.
 
 ---
 
 ## Dependencies
 
-All examples use **Python 3.10+** and **PyTorch**. The DeepONet example additionally requires **DeepXDE**.
-
-Install the core dependencies with:
-
-```bash
-pip install torch torchvision
-```
-
-For the DeepONet example only:
-
-```bash
-pip install deepxde
-```
-
-No other external libraries are required. Standard scientific Python packages (`numpy`, `matplotlib`) are used throughout and will be installed automatically as dependencies of PyTorch.
-
----
-
-## Hardware
-
-Most examples are lightweight and will run comfortably on a standard laptop CPU in a few minutes. The exception is:
-
-- **`deeponet_advection/`** — this example samples 1000 input functions per epoch and trains for 30,000 iterations. A GPU is strongly recommended. On CPU this will be very slow.
-
-For all other examples, GPU acceleration is optional but will speed things up.
-
-To check whether PyTorch can see your GPU:
-
-```python
-import torch
-print(torch.cuda.is_available())
-```
-
----
-
-## Getting Started
-
-If you are new to PINNs, the recommended order is:
-
-1. `lagaris_ode_system/` — the simplest example; introduces the core PINN training loop, failure modes, and curriculum learning
-2. `lagaris_poisson_2d/` — extends to a 2D PDE; explores collocation strategies and overfitting
-3. `adaptive_sampling/` — introduces RAR and RAD for automatic collocation point placement
-4. `self_adaptive_pinns/` — trainable weights on collocation points
-5. `spectral_bias_fourier/` — demonstrates spectral bias and how Fourier features fix it
-6. `allen_cahn/` — a more challenging PDE combining several techniques
-7. `solution_bundles/` — learning a parametric family of solutions simultaneously
-8. `deeponet_advection/` — operator learning with PI-DeepONets
-
-Each example can also be run independently without working through the others first.
-
----
-
-## Hyperparameters
-
-Full hyperparameter configurations for every experiment are documented in the `README.md` of each folder. If you want to experiment, the hyperparameters are collected at the top of each script in a clearly labelled configuration block, so they are easy to find and modify.
-
----
-
-## Citation
-
-If you find this code useful, please cite the dissertation:
-
-```
-Andrey Marshall, "Physics-Informed Neural Networks", MMath Dissertation,
-Durham University, 2026.
-```
+- Python 3.x  
+- PyTorch  
+- NumPy  
+- Matplotlib  
+- DeepXDE (PI-DeepONet example only)
 
 ---
 
 ## Acknowledgements
 
-This work used Durham University's NCC cluster. Thanks to Dr Kasper Peeters for supervision.
+This work used Durham University's NCC cluster. 
