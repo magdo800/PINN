@@ -1,4 +1,5 @@
 """
+Section 5.2 in dissertation.
 PI-DeepONet: Advection Equation Experiment
 ==========================================
 Learns the solution operator G: v -> u for the advection PDE:
