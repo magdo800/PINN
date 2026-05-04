@@ -59,7 +59,7 @@ Each example folder contains its own `README` with a description of the experime
 ![Allen–Cahn solution with Fourier features](Images/Chapter4/Allen_Cahn/Allen_solution_Fourier_sigma2.0.png)
 *PINN solution to the Allen–Cahn equation using Fourier feature embeddings, alongside the true solution and pointwise absolute error.*
 
-![Fourier vs standard PINN](Images/Chapter4/Allen_Cahn/Allen_comparison_vanilla_vs_fourier.png)
+![2D Poisson equation Comparison Sampling Method](Images/Chapter3/LagQ6/comparison_resample_error_curves.png)
 *Fourier features reduce the relative error from 0.52 to 0.089 compared to a standard network.*
 
 ---
