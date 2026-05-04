@@ -1,6 +1,6 @@
 # Physics-Informed Neural Networks
 
-A dissertation submitted for the degree of *MMath Mathematics* at Durham University, supervised by Dr Kasper Peeters.
+Code repository for my MMath Mathematics dissertation at Durham University, supervised by Dr Kasper Peeters.
 
 ---
 
