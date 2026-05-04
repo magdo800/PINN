@@ -1,4 +1,8 @@
+This Folder is solving the Allen Cahn equation with Fourier Feature versus without.  "Spectral Bias and Fourier Features", section 4.3 in the dissertation. File contains code Allen_Cahn_combined_soft_3.py where the FF vs without comparison is done. There is also an optional (currently commented out) sweep over different sigma values.
 
+Allen_Cahn_combined_soft_3.py takes around between 10-30 mins to run on a GPU, since the network has many nodes. It can be run on a CPU quickly if the network shape is adjusted to [2,10,1].
+
+Hyperparameters can be changed in the code, in the section under the "Config" comment.
 
 **Problem (Allen–Cahn PDE)**
 - PDE:
