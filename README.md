@@ -54,6 +54,16 @@ Each example folder contains its own `README` with a description of the experime
 
 ---
 
+## Highlights
+
+![Allen–Cahn solution with Fourier features](Images/Chapter4/Allen_Cahn/Allen_solution_Fourier_sigma2.0.png)
+*PINN solution to the Allen–Cahn equation using Fourier feature embeddings, alongside the true solution and pointwise absolute error.*
+
+![Fourier vs standard PINN](Images/Chapter4/Allen_Cahn/Allen_comparison_vanilla_vs_fourier.png)
+*Fourier features reduce the relative error from 0.52 to 0.089 compared to a standard network.*
+
+---
+
 ## Key Results
 
 - Curriculum learning improved convergence on the coupled ODE from 22% to 100% across 100 random seeds.
@@ -76,4 +86,4 @@ Each example folder contains its own `README` with a description of the experime
 
 ## Acknowledgements
 
-This work used Durham University's NCC cluster. 
+This work used Durham University's NCC cluster.
